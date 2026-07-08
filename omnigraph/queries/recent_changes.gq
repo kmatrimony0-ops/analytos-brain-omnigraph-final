@@ -1,0 +1,2 @@
+// Recent changes are served from Omnigraph commit APIs or local review manifests in this POC.
+// Keep this file as the query registry placeholder for cluster-managed deployments.
