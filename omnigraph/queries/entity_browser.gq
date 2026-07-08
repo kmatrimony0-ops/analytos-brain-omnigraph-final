@@ -1,0 +1,5 @@
+query list_products() { match { $p: Product {} } return { $p.slug, $p.name, $p.description, $p.source_doc_id, $p.visibility } order { $p.name asc } }
+query list_features() { match { $f: Feature {} } return { $f.slug, $f.name, $f.description, $f.source_doc_id, $f.visibility } order { $f.name asc } }
+query list_proof_points() { match { $p: ProofPoint {} } return { $p.slug, $p.claim, $p.numeric_value, $p.unit, $p.source_doc_id, $p.visibility } order { $p.slug asc } }
+query list_icp_segments() { match { $s: ICPSegment {} } return { $s.slug, $s.name, $s.description, $s.firmographics, $s.trigger_signals, $s.source_doc_id } order { $s.name asc } }
+query list_personas() { match { $p: Persona {} } return { $p.slug, $p.title, $p.pain_points, $p.goals, $p.source_doc_id } order { $p.title asc } }
