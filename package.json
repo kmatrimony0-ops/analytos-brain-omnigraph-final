@@ -1,0 +1,14 @@
+{
+  "name": "analytos-brain-omnigraph-poc",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "mcp:content": "ANALYTOS_ACTOR=content-agent node mcp/custom-wrapper/server.mjs",
+    "mcp:gtm": "ANALYTOS_ACTOR=gtm-agent node mcp/custom-wrapper/server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {}
+}
