@@ -29,7 +29,7 @@ Ingest → Extract → Human Review → Merge to main → Dashboard + MCP → Ag
 ```text
 seed-data/*.md
   → pipeline.ingest
-  → deterministic extraction + optional LLM hook
+  → Gemini Flash extraction when GEMINI_API_KEY is set; deterministic fallback otherwise
   → runs/<run-id>/graph.jsonl
   → ingest/<run-id> branch
   → human review diff
@@ -60,6 +60,18 @@ Optional Omnigraph install:
 curl -fsSL https://raw.githubusercontent.com/ModernRelay/omnigraph/main/scripts/install.sh | bash
 omnigraph version
 ```
+
+## Optional: enable real Gemini LLM extraction
+
+The repo runs without secrets, but for assessment compliance you should set a Gemini key locally or in hosting:
+
+```bash
+export GEMINI_API_KEY="your-rotated-google-ai-studio-key"
+# optional
+export GEMINI_MODEL="gemini-1.5-flash"
+```
+
+Never commit `.env` files or paste API keys into the repository.
 
 ## Run the full local demo
 
@@ -247,7 +259,7 @@ Covered criteria:
 
 ## Known limitations
 
-- The default extraction path is deterministic for reproducibility. `pipeline/extract.py` includes the seam to plug in GPT-4o-mini/Gemini Flash using the same output contract.
+- Gemini Flash extraction is implemented and used when `GEMINI_API_KEY` is set. The deterministic fallback remains for reproducible tests and demos without credentials.
 - The local graph store is a test/demo fallback. Production submission hosting should run Omnigraph server with `cluster.yaml` and the Cedar bundle.
 - The included seed docs are demo fixtures because the private official seed docs were not uploaded here.
 
