@@ -1,0 +1,5 @@
+@description("ICP, persona, and proof-point context for GTM agent")
+query get_gtm_context($product: String) {
+  match { $p: Product { name: $product } -[TARGETS]-> $s: ICPSegment {} }
+  return { $p.name, $s.name, $s.description, $s.firmographics, $s.trigger_signals, $s.source_doc_id }
+}
