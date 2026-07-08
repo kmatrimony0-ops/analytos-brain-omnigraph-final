@@ -1,0 +1,7 @@
+@description("Hybrid search over approved company knowledge")
+query search_knowledge($q: String) {
+  match { $p: Product {} }
+  return { $p.name, $p.description, bm25($p.description, $q) as score, $p.source_doc_id }
+  order { score desc }
+  limit 10
+}
