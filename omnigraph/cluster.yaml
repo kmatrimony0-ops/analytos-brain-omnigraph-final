@@ -1,0 +1,15 @@
+cluster:
+  id: analytos-brain-local
+
+graphs:
+  - id: analytos-brain
+    uri: file://data/analytos-brain.omni
+    schema: schema/analytos.pg
+    queries:
+      - queries/entity_browser.gq
+      - queries/search_knowledge.gq
+      - queries/product_context.gq
+      - queries/gtm_context.gq
+      - queries/recent_changes.gq
+    policies:
+      - policies/analytos.cedar
