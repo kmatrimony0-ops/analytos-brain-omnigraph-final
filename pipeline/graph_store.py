@@ -102,6 +102,8 @@ class LocalGraphStore:
         }
         state["commits"].append(commit)
         state["reviews"].append({"branch": branch, "status": "approved", "actor": actor, "timestamp": commit["timestamp"]})
+        if branch != target:
+            state["branches"].pop(branch, None)
         self._write(state)
         return commit
 
