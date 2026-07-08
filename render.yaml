@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: analytos-brain-dashboard
+    env: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m pipeline.ingest --input seed-data --run-id hosted-seed && python -m pipeline.review approve ingest/hosted-seed && uvicorn dashboard.backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
+      - key: GEMINI_API_KEY
+        sync: false
