@@ -1,0 +1,5 @@
+@description("Product, features, proof points, and metrics for agent grounding")
+query get_product_context($product: String) {
+  match { $p: Product { name: $product } -[HAS_FEATURE]-> $f: Feature {} }
+  return { $p.name, $p.description, $f.name, $f.description, $f.source_doc_id }
+}
