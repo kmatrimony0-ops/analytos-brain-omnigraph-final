@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2
+python-dotenv>=1
+pytest>=8
+openai>=1
+anthropic>=0.34
