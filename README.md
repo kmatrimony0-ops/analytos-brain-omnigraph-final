@@ -263,17 +263,4 @@ Covered criteria:
 - The local graph store is a test/demo fallback. Production submission hosting should run Omnigraph server with `cluster.yaml` and the Cedar bundle.
 - The included seed docs are demo fixtures because the private official seed docs were not uploaded here.
 
-## Submission email template
 
-To: `santosh.thota@analytos.ai`  
-CC: `ashok.suthar@analytos.ai`  
-Subject: `Context Layer Omnigraph Task – <Your Name>`
-
-Include:
-
-1. GitHub repo link
-2. Dashboard URL and credentials
-3. MCP endpoint/config and credentials
-4. Demo video link
-5. Resume drive link
-6. Short implementation notes
