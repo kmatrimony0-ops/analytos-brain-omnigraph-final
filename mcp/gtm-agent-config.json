@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "analytos-brain-gtm": {
+      "command": "node",
+      "args": ["mcp/custom-wrapper/server.mjs"],
+      "env": {
+        "ANALYTOS_ACTOR": "gtm-agent"
+      }
+    }
+  }
+}
