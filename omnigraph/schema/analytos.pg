@@ -2,6 +2,7 @@ interface Sourced {
   source_doc_id: String
   source_doc_hash: String
   source_file: String
+  source_quote: String?
   visibility: enum(public, approved_internal, internal_only, restricted)
 }
 
