@@ -1,0 +1,123 @@
+interface Sourced {
+  source_doc_id: String
+  source_doc_hash: String
+  source_file: String
+  visibility: enum(public, approved_internal, internal_only, restricted)
+}
+
+node Product implements Sourced {
+  slug: String
+  name: String
+  description: String
+  @key(slug)
+  @index(name)
+}
+
+node Feature implements Sourced {
+  slug: String
+  name: String
+  description: String
+  @key(slug)
+  @index(name)
+}
+
+node Metric implements Sourced {
+  slug: String
+  label: String
+  value: F64?
+  unit: String?
+  direction: enum(increase, decrease, neutral)?
+  @key(slug)
+}
+
+node ProofPoint implements Sourced {
+  slug: String
+  claim: String
+  evidence: String
+  numeric_value: F64?
+  unit: String?
+  @key(slug)
+}
+
+node Persona implements Sourced {
+  slug: String
+  title: String
+  pain_points: [String]
+  goals: [String]
+  @key(slug)
+}
+
+node ICPSegment implements Sourced {
+  slug: String
+  name: String
+  description: String
+  firmographics: [String]
+  trigger_signals: [String]
+  @key(slug)
+}
+
+node Person implements Sourced {
+  slug: String
+  name: String
+  role: String?
+  company: String?
+  @key(slug)
+}
+
+node EmailThread implements Sourced {
+  slug: String
+  subject: String
+  summary: String
+  internal_notes: String?
+  @key(slug)
+}
+
+node Decision implements Sourced {
+  slug: String
+  decision: String
+  rationale: String?
+  @key(slug)
+}
+
+node SourceDocument implements Sourced {
+  title: String
+  summary: String
+  @key(source_doc_id)
+}
+
+edge HAS_FEATURE: Product -> Feature {
+  source_doc_id: String
+  @unique(src, dst, source_doc_id)
+}
+edge PROVEN_BY: Product -> ProofPoint {
+  source_doc_id: String
+  @unique(src, dst, source_doc_id)
+}
+edge HAS_METRIC: ProofPoint -> Metric {
+  source_doc_id: String
+  @unique(src, dst, source_doc_id)
+}
+edge TARGETS: Product -> ICPSegment {
+  source_doc_id: String
+  @unique(src, dst, source_doc_id)
+}
+edge HAS_PERSONA: ICPSegment -> Persona {
+  source_doc_id: String
+  @unique(src, dst, source_doc_id)
+}
+edge DISCUSSED_IN: Product -> EmailThread {
+  source_doc_id: String
+  @unique(src, dst, source_doc_id)
+}
+edge FROM_THREAD: Decision -> EmailThread {
+  source_doc_id: String
+  @unique(src, dst, source_doc_id)
+}
+edge DECIDED_BY: Decision -> Person {
+  source_doc_id: String
+  @unique(src, dst, source_doc_id)
+}
+edge MENTIONS: SourceDocument -> Product {
+  source_doc_id: String
+  @unique(src, dst, source_doc_id)
+}
