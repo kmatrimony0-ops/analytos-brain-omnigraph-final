@@ -4,7 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 from .models import Edge, ExtractionResult, Node
 from .normalize import content_hash, doc_id_for_path, edge_id, metric_id, node_id, proof_id, slugify
@@ -226,11 +226,236 @@ def extract_path(input_path: Path) -> ExtractionResult:
     return ExtractionResult(list(all_nodes.values()), list(all_edges.values()), source_files, warnings)
 
 
-def extract_with_optional_llm(input_path: Path) -> ExtractionResult:
-    """Use deterministic extraction by default. LLM extraction can be added without changing downstream code.
+LLM_PROMPT = """
+You extract governed company knowledge for an Omnigraph knowledge graph.
+Return ONLY valid JSON with these arrays:
+products, features, proof_points, metrics, icp_segments, personas, email_threads, decisions.
 
-    The assessment asks for an LLM extraction step. This repo keeps the POC reproducible without secrets by using
-    deterministic extraction in tests and demos. If OPENAI_API_KEY or GEMINI_API_KEY is set, teams can replace this
-    function with a model call while preserving the same ExtractionResult contract.
+Schema:
+- products: name, description, visibility, source_quote
+- features: product, name, description, visibility, source_quote
+- proof_points: product, claim, evidence, numeric_value, unit, visibility, source_quote
+- metrics: product, label, value, unit, direction, visibility, source_quote
+- icp_segments: product, name, description, firmographics, trigger_signals, visibility, source_quote
+- personas: segment, title, pain_points, goals, visibility, source_quote
+- email_threads: subject, summary, internal_notes, visibility, source_quote
+- decisions: decision, rationale, visibility, source_quote
+
+Rules:
+1. Do not invent facts.
+2. Email-thread content must be visibility=internal_only.
+3. Metrics must be structured numeric values when possible.
+4. Include short source_quote strings for traceability.
+5. If unsure, omit the item.
+"""
+
+
+def _json_from_model_text(text: str) -> Dict[str, Any]:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?", "", cleaned).strip()
+        cleaned = re.sub(r"```$", "", cleaned).strip()
+    return json.loads(cleaned)
+
+
+def _item_source(source: Dict[str, str], item: Dict[str, Any], default_visibility: str = "approved_internal") -> Dict[str, str]:
+    return {
+        **source,
+        "source_quote": str(item.get("source_quote") or ""),
+        "visibility": str(item.get("visibility") or default_visibility),
+    }
+
+
+def _result_from_llm_payload(path: Path, text: str, payload: Dict[str, Any]) -> ExtractionResult:
+    source = _source_base(path, text)
+    sections = _extract_section_lines(text)
+    default_product = _infer_product_name(path, sections)
+    nodes: Dict[str, Node] = {}
+    edges: Dict[str, Edge] = {}
+    warnings: List[str] = []
+
+    doc_node = _make_node(
+        "SourceDocument",
+        source["source_doc_id"],
+        {**source, "source_quote": "", "visibility": "approved_internal"},
+        title=path.name,
+        summary=_first_sentence(sections.get("intro", []), path.name),
+    )
+    nodes[doc_node.id] = doc_node
+
+    products = payload.get("products") or []
+    for item in products:
+        if not item.get("name"):
+            continue
+        p_id = node_id("Product", item["name"])
+        nodes[p_id] = _make_node(
+            "Product",
+            p_id,
+            _item_source(source, item),
+            slug=slugify(item["name"]),
+            name=item["name"],
+            description=item.get("description") or "",
+        )
+        edges[_make_edge("MENTIONS", doc_node.id, p_id, source).id] = _make_edge("MENTIONS", doc_node.id, p_id, source)
+
+    def product_id_for(item: Dict[str, Any]) -> str:
+        product = item.get("product") or (products[0].get("name") if products else default_product)
+        p_id = node_id("Product", product)
+        if p_id not in nodes:
+            nodes[p_id] = _make_node("Product", p_id, _item_source(source, {"visibility": "approved_internal"}), slug=slugify(product), name=product, description=f"Referenced by {path.name}")
+        return p_id
+
+    proof_ids_by_product: Dict[str, List[str]] = {}
+
+    for item in payload.get("features") or []:
+        if not item.get("name"):
+            continue
+        p_id = product_id_for(item)
+        product_name = nodes[p_id].data["name"]
+        f_id = node_id("Feature", product_name, item["name"])
+        nodes[f_id] = _make_node("Feature", f_id, _item_source(source, item), slug=slugify(f"{product_name}-{item['name']}"), name=item["name"], description=item.get("description") or "")
+        edges[_make_edge("HAS_FEATURE", p_id, f_id, source).id] = _make_edge("HAS_FEATURE", p_id, f_id, source)
+
+    for item in payload.get("proof_points") or []:
+        claim = item.get("claim") or item.get("evidence")
+        if not claim:
+            continue
+        p_id = product_id_for(item)
+        product_name = nodes[p_id].data["name"]
+        pr_id = proof_id(product_name, claim, source["source_doc_id"])
+        nodes[pr_id] = _make_node(
+            "ProofPoint",
+            pr_id,
+            _item_source(source, item),
+            slug=slugify(pr_id),
+            claim=claim,
+            evidence=item.get("evidence") or claim,
+            numeric_value=item.get("numeric_value"),
+            unit=item.get("unit"),
+        )
+        proof_ids_by_product.setdefault(product_name, []).append(pr_id)
+        edges[_make_edge("PROVEN_BY", p_id, pr_id, source).id] = _make_edge("PROVEN_BY", p_id, pr_id, source)
+
+    for item in payload.get("metrics") or []:
+        label = item.get("label")
+        if not label:
+            continue
+        p_id = product_id_for(item)
+        product_name = nodes[p_id].data["name"]
+        m_id = metric_id(product_name, label, source["source_doc_id"])
+        nodes[m_id] = _make_node(
+            "Metric",
+            m_id,
+            _item_source(source, item),
+            slug=slugify(m_id),
+            label=label,
+            value=item.get("value"),
+            unit=item.get("unit"),
+            direction=item.get("direction") or "neutral",
+        )
+        for pr_id in proof_ids_by_product.get(product_name, [])[:1]:
+            edges[_make_edge("HAS_METRIC", pr_id, m_id, source).id] = _make_edge("HAS_METRIC", pr_id, m_id, source)
+
+    for item in payload.get("icp_segments") or []:
+        if not item.get("name"):
+            continue
+        p_id = product_id_for(item)
+        seg_id = node_id("ICPSegment", item["name"])
+        nodes[seg_id] = _make_node(
+            "ICPSegment",
+            seg_id,
+            _item_source(source, item),
+            slug=slugify(item["name"]),
+            name=item["name"],
+            description=item.get("description") or "",
+            firmographics=item.get("firmographics") or [],
+            trigger_signals=item.get("trigger_signals") or [],
+        )
+        edges[_make_edge("TARGETS", p_id, seg_id, source).id] = _make_edge("TARGETS", p_id, seg_id, source)
+
+    for item in payload.get("personas") or []:
+        if not item.get("title"):
+            continue
+        persona_id = node_id("Persona", item["title"])
+        nodes[persona_id] = _make_node(
+            "Persona",
+            persona_id,
+            _item_source(source, item),
+            slug=slugify(item["title"]),
+            title=item["title"],
+            pain_points=item.get("pain_points") or [],
+            goals=item.get("goals") or [],
+        )
+
+    for item in payload.get("email_threads") or []:
+        subject = item.get("subject") or path.stem
+        thread_id = node_id("EmailThread", path.stem, subject[:40])
+        nodes[thread_id] = _make_node(
+            "EmailThread",
+            thread_id,
+            _item_source(source, {**item, "visibility": "internal_only"}, "internal_only"),
+            slug=slugify(thread_id),
+            subject=subject,
+            summary=item.get("summary") or "",
+            internal_notes=item.get("internal_notes") or "",
+        )
+
+    thread_ids = [node.id for node in nodes.values() if node.type == "EmailThread"]
+    for item in payload.get("decisions") or []:
+        if not item.get("decision"):
+            continue
+        d_id = node_id("Decision", path.stem, item["decision"][:40])
+        nodes[d_id] = _make_node("Decision", d_id, _item_source(source, item, "internal_only"), slug=slugify(d_id), decision=item["decision"], rationale=item.get("rationale") or "")
+        for thread_id in thread_ids[:1]:
+            edges[_make_edge("FROM_THREAD", d_id, thread_id, source).id] = _make_edge("FROM_THREAD", d_id, thread_id, source)
+
+    return ExtractionResult(list(nodes.values()), list(edges.values()), [str(path)], warnings)
+
+
+def _gemini_extract_file(path: Path) -> ExtractionResult | None:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    text = path.read_text(encoding="utf-8")
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=api_key)
+        model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name)
+        response = model.generate_content(
+            f"{LLM_PROMPT}\n\nSOURCE FILE: {path.name}\n\nDOCUMENT:\n{text}",
+            generation_config={"temperature": 0, "response_mime_type": "application/json"},
+        )
+        payload = _json_from_model_text(response.text)
+        result = _result_from_llm_payload(path, text, payload)
+        result.warnings.append(f"llm_extractor=gemini:{model_name}")
+        return result
+    except Exception as exc:
+        fallback = heuristic_extract_file(path)
+        fallback.warnings.append(f"Gemini extraction failed for {path.name}; used deterministic fallback: {type(exc).__name__}")
+        return fallback
+
+
+def extract_with_optional_llm(input_path: Path) -> ExtractionResult:
+    """Use Gemini Flash when GEMINI_API_KEY is present; otherwise use deterministic extraction.
+
+    No secret is stored in the repo. Set GEMINI_API_KEY in your shell or hosting env.
+    The deterministic path keeps tests and demos reproducible without credentials.
     """
+    files = sorted(input_path.glob("*.md")) if input_path.is_dir() else [input_path]
+    if os.getenv("GEMINI_API_KEY"):
+        all_nodes: Dict[str, Node] = {}
+        all_edges: Dict[str, Edge] = {}
+        source_files: List[str] = []
+        warnings: List[str] = []
+        for file_path in files:
+            result = _gemini_extract_file(file_path) or heuristic_extract_file(file_path)
+            for node in result.nodes:
+                all_nodes[node.id] = node
+            for edge in result.edges:
+                all_edges[edge.id] = edge
+            source_files.extend(result.source_files)
+            warnings.extend(result.warnings)
+        return ExtractionResult(list(all_nodes.values()), list(all_edges.values()), source_files, warnings)
     return extract_path(input_path)
